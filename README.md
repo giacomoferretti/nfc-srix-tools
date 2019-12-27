@@ -1,2 +1,4 @@
-# SRiX4K
-A repository containing tools to read/write SRiX4K NFC tags.
+# NFC SRIX Tools
+A repository containing tools to read/write NFC ST SRI512 and SRIX4K tags.
+
+## Build
