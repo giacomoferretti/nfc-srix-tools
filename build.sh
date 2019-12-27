@@ -11,7 +11,8 @@ cmake ../../
 make
 
 # Copy executables
-mv nfc-srix-read ../
+mv srix-dump ../
+mv srix-read ../
 
 # Cleanup
 cd ../
