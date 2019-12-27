@@ -14,8 +14,10 @@ make
 ```
 
 ## Usage
+
+### srix-dump
 ```text
-Usage: ./nfc-srix-read [-h] [-v] [-a] [-s] [-u] [-r] [-t x4k|512] [-o dump.bin]
+Usage: ./srix-dump [-h] [-v] [-a] [-s] [-u] [-r] [-t x4k|512] [-o dump.bin]
 
 Options:
   -h           Shows this help message
@@ -26,4 +28,18 @@ Options:
   -r           Fix read direction
   -t x4k|512   Select SRIX4K or SRI512 tag type [default: x4k]
   -o dump.bin  Dump EEPROM to file
+```
+
+### srix-read
+```text
+Usage: ./srix-read <dump.bin> [-h] [-c 1|2] [-t x4k|512]
+
+Necessary arguments:
+  <dump.bin>   Path to the dump file
+
+Options:
+  -h           Shows this help message
+  -v           Enables verbose - print debugging data
+  -c 1|2       Print on one or two columns [default: 1]
+  -t x4k|512   Select SRIX4K or SRI512 tag type [default: x4k]
 ```
