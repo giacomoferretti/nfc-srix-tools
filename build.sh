@@ -12,8 +12,6 @@ make
 
 # Copy executables
 mv nfc-srix-read ../
-mv print_dump ../
-mv dump_eeprom ../
 
 # Cleanup
 cd ../
