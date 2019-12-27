@@ -64,7 +64,7 @@ int main(int argc, char *argv[], char *envp[]) {
                 break;
             default:
             case 'h':
-                printf(USAGE, argv[0]);
+                print_usage(argv[0]);
                 exit(0);
         }
     }
