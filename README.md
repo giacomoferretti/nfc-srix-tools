@@ -6,7 +6,7 @@ A repository containing tools to read/write NFC ST SRI512 and SRIX4K tags.
 
 ## Build
 You can use the provided `build.sh` or do these simple steps:
-```shell script
+```bash
 mkdir build
 cd build
 cmake ..
