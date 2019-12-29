@@ -24,7 +24,7 @@
 #define SRI512_EEPROM_SIZE 64
 
 static void print_usage(const char *executable) {
-    printf("Usage: %s <dump.bin> [-h] [-c 1|2] [-t x4k|512]\n", executable);
+    printf("Usage: %s <dump.bin> [-h] [-v] [-c 1|2] [-t x4k|512]\n", executable);
     printf("\nNecessary arguments:\n");
     printf("  <dump.bin>   Path to the dump file\n");
     printf("\nOptions:\n");
@@ -33,8 +33,6 @@ static void print_usage(const char *executable) {
     printf("  -c 1|2       Print on one or two columns [default: 1]\n");
     printf("  -t x4k|512   Select SRIX4K or SRI512 tag type [default: x4k]\n");
 }
-
-#define USAGE "Usage: %s <dump.bin> [-c 1|2] [-t x4k|512]\n"
 
 char *get_block_type(int block_num) {
     if (block_num < 5) {
@@ -98,7 +96,7 @@ int main(int argc, char *argv[], char *envp[]) {
         exit(1);
     }
     if (file_stat.st_size != SRIX4K_EEPROM_SIZE) {
-        lerror("File wrong size, expected %llu but read %llu. Exiting...\n", SRIX4K_EEPROM_SIZE, file_stat.st_size);
+        lerror("Wrong file size, expected %llu but read %llu. Exiting...\n", SRIX4K_EEPROM_SIZE, file_stat.st_size);
         exit(1);
     }
 
