@@ -4,6 +4,9 @@ A repository containing tools to read/write NFC ST SRI512 and SRIX4K tags.
 ## TODO
 * Add SRI512 support
 
+## Prerequisites
+* [libnfc](https://github.com/nfc-tools/libnfc)
+
 ## Build
 You can use the provided `build.sh` or do these simple steps:
 ```bash
