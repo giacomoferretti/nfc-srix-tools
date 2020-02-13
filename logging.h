@@ -17,16 +17,22 @@
 #ifndef LOGGING_H
 #define LOGGING_H
 
-#include <stdbool.h>
+// Foreground
+#define RED "\033[31m"
+#define GREEN "\033[32m"
+#define YELLOW "\033[33m"
 
-#define RED "\033[1;31m"
-#define GREEN "\033[1;32m"
-#define YELLOW "\033[1;33m"
+// Styles
 #define RESET "\033[0m"
+#define BOLD "\033[1m"
+#define DIM "\033[2m"
 
 bool verbose_status;
+int verbosity_level;
 void set_verbose(bool);
+void set_verbosity(int);
 int lverbose(const char * restrict, ...);
+int lverbose_lvl(int, const char * restrict, ...);
 int lerror(const char * restrict, ...);
 int lwarning(const char * restrict, ...);
 

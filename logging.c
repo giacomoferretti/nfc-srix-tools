@@ -14,15 +14,20 @@
  * limitations under the License.
  */
 
-#include <stdbool.h>
-#include <stdarg.h>
 #include <stdio.h>
+#include <stdarg.h>
+#include <stdbool.h>
 #include "logging.h"
 
 bool verbose_status = false;
+int verbosity_level = 0;
 
 void set_verbose(bool setting) {
     verbose_status = setting;
+}
+
+void set_verbosity(int level) {
+    verbosity_level = level;
 }
 
 int lverbose(const char * restrict format, ...) {
@@ -38,10 +43,11 @@ int lverbose(const char * restrict format, ...) {
     return ret;
 }
 
-int lerror(const char * restrict format, ...) {
-    printf(RED);
-    printf("ERROR: ");
-    printf(RESET);
+int lverbose_lvl(int level, const char * restrict format, ...) {
+    if (level < verbosity_level) {
+        return 0;
+    }
+
     va_list args;
     va_start(args, format);
     int ret = vprintf(format, args);
@@ -50,13 +56,29 @@ int lerror(const char * restrict format, ...) {
     return ret;
 }
 
-int lwarning(const char * restrict format, ...) {
-    printf(YELLOW);
-    printf("WARNING: ");
-    printf(RESET);
+int lerror(const char * restrict format, ...) {
+    fprintf(stderr, BOLD);
+    fprintf(stderr, RED);
+    fprintf(stderr, "ERROR: ");
+    fprintf(stderr, RESET);
+
     va_list args;
     va_start(args, format);
-    int ret = vprintf(format, args);
+    int ret = vfprintf(stderr, format, args);
+    va_end(args);
+
+    return ret;
+}
+
+int lwarning(const char * restrict format, ...) {
+    fprintf(stderr, BOLD);
+    fprintf(stderr, YELLOW);
+    fprintf(stderr, "WARNING: ");
+    fprintf(stderr, RESET);
+
+    va_list args;
+    va_start(args, format);
+    int ret = vfprintf(stderr, format, args);
     va_end(args);
 
     return ret;
