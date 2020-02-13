@@ -13,6 +13,8 @@ make
 # Copy executables
 mv srix-dump ../
 mv srix-read ../
+mv srix-reset ../
+mv srix-restore ../
 
 # Cleanup
 cd ../
