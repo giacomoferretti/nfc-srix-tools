@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Giacomo Ferretti
+ * Copyright 2019-2020 Giacomo Ferretti
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,80 +16,26 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdbool.h>
 #include <nfc/nfc.h>
+#include <inttypes.h>
 #include "logging.h"
-
-#define MAX_FRAME_LEN 10
-#define SRIX4K_EEPROM_SIZE 512
-#define SRIX4K_EEPROM_BLOCKS 128
-#define SRI512_EEPROM_SIZE 64
-#define SRI512_EEPROM_BLOCKS 16
-
-// SRIX4K and SRI512 commands
-static __uint8_t get_uid_command[1] = { 0x0B };
-static __uint8_t read_block_command[2] = { 0x08 };
-static __uint8_t write_block_command[6] = { 0x09 };
-
-static const nfc_modulation nmISO14443B = {
-        .nmt = NMT_ISO14443B,
-        .nbr = NBR_106,
-};
-
-static const nfc_modulation nmISO14443B2SR = {
-        .nmt = NMT_ISO14443B2SR,
-        .nbr = NBR_106,
-};
+#include "nfc_utils.h"
 
 static void print_usage(const char *executable) {
-    printf("Usage: %s [-h] [-v] [-a] [-s] [-u] [-r] [-t x4k|512] [-o dump.bin]\n", executable);
+    printf("Usage: %s [dump.bin] [-h] [-v] [-u] [-s] [-a] [-r] [-t x4k|512]\n", executable);
+    printf("\nOptional arguments:\n");
+    printf("  [dump.bin]   dump EEPROM to file\n");
     printf("\nOptions:\n");
-    printf("  -h           Shows this help message\n");
-    printf("  -v           Enables verbose - print debugging data\n");
-    printf("  -a           Enables -s and -u flags together\n");
-    printf("  -s           Prints system block\n");
-    printf("  -u           Prints UID\n");
-    printf("  -r           Fix read direction\n");
-    printf("  -t x4k|512   Select SRIX4K or SRI512 tag type [default: x4k]\n");
-    printf("  -o dump.bin  Dump EEPROM to file\n");
-}
-
-static char *get_block_type(int block_num) {
-    if (block_num < 5) {
-        return "Resettable OTP bits";
-    } else if (block_num < 7) {
-        return "Count down counter";
-    } else if (block_num < 16) {
-        return "Lockable EEPROM";
-    } else {
-        return "EEPROM";
-    }
-}
-
-static void log_command_sent(const __uint8_t *command, const size_t num_bytes) {
-    if (!verbose_status) {
-        return;
-    }
-
-    printf("TX >> ");
-    for (int i = 0; i < num_bytes; i++) {
-        printf("%02X ", command[i]);
-    }
-    printf("\n");
-}
-
-static void log_command_received(const uint8_t *command, const size_t num_bytes) {
-    if (!verbose_status) {
-        return;
-    }
-
-    printf("RX << ");
-    for (int i = 0; i < num_bytes; i++) {
-        printf("%02X ", command[i]);
-    }
-    printf("\n");
+    printf("  -h           show this help message\n");
+    printf("  -v           enable verbose - print debugging data\n");
+    printf("  -s           print system block\n");
+    printf("  -u           print UID\n");
+    printf("  -a           enable -s and -u flags together\n");
+    printf("  -r           fix read direction\n");
+    printf("  -t x4k|512   select SRIX4K or SRI512 tag type [default: x4k]\n");
 }
 
 int main(int argc, char *argv[], char *envp[]) {
@@ -97,10 +43,12 @@ int main(int argc, char *argv[], char *envp[]) {
     bool print_uid = false;
     bool fix_read_direction = false;
     char *output_path = NULL;
+    uint32_t eeprom_size = SRIX4K_EEPROM_SIZE;
+    uint32_t eeprom_blocks_amount = SRIX4K_EEPROM_BLOCKS;
 
     // Parse options
     int opt = 0;
-    while ((opt = getopt(argc, argv, "hvasuro:")) != -1) {
+    while ((opt = getopt(argc, argv, "hvusart:")) != -1) {
         switch (opt) {
             case 'v':
                 set_verbose(true);
@@ -118,8 +66,11 @@ int main(int argc, char *argv[], char *envp[]) {
             case 'r':
                 fix_read_direction = true;
                 break;
-            case 'o':
-                output_path = optarg;
+            case 't':
+                if (strcmp(optarg, "512") == 0) {
+                    eeprom_size = SRI512_EEPROM_SIZE;
+                    eeprom_blocks_amount = SRI512_EEPROM_BLOCKS;
+                }
                 break;
             default:
             case 'h':
@@ -128,8 +79,14 @@ int main(int argc, char *argv[], char *envp[]) {
         }
     }
 
-    // Initialize libnfc and set the nfc_context
-    nfc_context *context;
+    // Check arguments
+    if ((argc - optind) > 0) {
+        output_path = argv[optind];
+    }
+
+    // Initialize NFC
+    nfc_context *context = NULL;
+    nfc_device *reader = NULL;
     nfc_init(&context);
     if (context == NULL) {
         lerror("Unable to init libnfc. Exiting...\n");
@@ -137,35 +94,50 @@ int main(int argc, char *argv[], char *envp[]) {
     }
 
     // Display libnfc version
-    lverbose("Using libnfc version: %s\n", nfc_version());
+    lverbose("libnfc version: %s\n", nfc_version());
 
-    /*
-     * Open, using the first available NFC device which can be in order of selection:
-     *   - default device specified using environment variable or
-     *   - first specified device in libnfc.conf (/etc/nfc) or
-     *   - first specified device in device-configuration directory (/etc/nfc/devices.d) or
-     *   - first auto-detected (if feature is not disabled in libnfc.conf) device
-     */
-    nfc_device *pnd = nfc_open(context, NULL);
+    // Search for readers
+    lverbose("Searching for readers... ");
+    nfc_connstring connstrings[MAX_DEVICE_COUNT] = {};
+    size_t num_readers = nfc_list_devices(context, connstrings, MAX_DEVICE_COUNT);
+    lverbose("found %zu.\n", num_readers);
 
     // Check if no readers are available
-    if (pnd == NULL) {
+    if (num_readers == 0) {
+        lerror("No readers available. Exiting...\n");
+        close_nfc(context, reader);
+        exit(1);
+    }
+
+    // Print out readers
+    for (unsigned int i = 0; i < num_readers; i++) {
+        if (i == num_readers - 1) {
+            lverbose("└── ");
+        } else {
+            lverbose("├── ");
+        }
+        lverbose("[%d] %s\n", i, connstrings[i]);
+    }
+    lverbose("Opening %s...\n", connstrings[0]);
+
+    // Open first reader
+    reader = nfc_open(context, connstrings[0]);
+    if (reader == NULL) {
         lerror("Unable to open NFC device. Exiting...\n");
-        nfc_exit(context);
+        close_nfc(context, reader);
         exit(1);
     }
 
     // Set opened NFC device to initiator mode
-    if (nfc_initiator_init(pnd) < 0) {
-        lerror("nfc_initiator_init => %s\n", nfc_strerror(pnd));
-        nfc_close(pnd);
-        nfc_exit(context);
+    if (nfc_initiator_init(reader) < 0) {
+        lerror("nfc_initiator_init => %s\n", nfc_strerror(reader));
+        close_nfc(context, reader);
         exit(1);
     }
 
-    lverbose("NFC reader: %s opened\n", nfc_device_get_name(pnd));
+    lverbose("NFC reader: %s\n", nfc_device_get_name(reader));
 
-    nfc_target ant[1];
+    nfc_target target_key[MAX_TARGET_COUNT];
 
     /*
      * This is a known bug from libnfc.
@@ -173,65 +145,50 @@ int main(int argc, char *argv[], char *envp[]) {
      *
      * https://github.com/nfc-tools/libnfc/issues/436#issuecomment-326686914
      */
-    lverbose("Searching for ISO14443B targets... found %d.\n", nfc_initiator_list_passive_targets(pnd, nmISO14443B, ant, 1));
+    lverbose("Searching for ISO14443B targets... found %d.\n", nfc_initiator_list_passive_targets(reader, nmISO14443B, target_key, MAX_TARGET_COUNT));
 
     lverbose("Searching for ISO14443B2SR targets...");
-    int ISO14443B2SR_targets = nfc_initiator_list_passive_targets(pnd, nmISO14443B2SR, ant, 1);
+    int ISO14443B2SR_targets = nfc_initiator_list_passive_targets(reader, nmISO14443B2SR, target_key, MAX_TARGET_COUNT);
     lverbose(" found %d.\n", ISO14443B2SR_targets);
 
     // Check for tags
-    nfc_target nt;
     if (ISO14443B2SR_targets == 0) {
         printf("Waiting for tag...\n");
 
         // Infinite select for tag
-        if (nfc_initiator_select_passive_target(pnd, nmISO14443B2SR, NULL, 0, &nt) <= 0) {
-            lerror("nfc_initiator_select_passive_target => %s\n", nfc_strerror(pnd));
-            nfc_close(pnd);
-            nfc_exit(context);
+        if (nfc_initiator_select_passive_target(reader, nmISO14443B2SR, NULL, 0, target_key) <= 0) {
+            lerror("nfc_initiator_select_passive_target => %s\n", nfc_strerror(reader));
+            close_nfc(context, reader);
             exit(1);
         }
     }
 
-    // Get UID command
-    __uint8_t uid_bytes_read = 0;
-    __uint8_t uid_rx_bytes[MAX_FRAME_LEN] = {};
-    log_command_sent(get_uid_command, sizeof(get_uid_command));
-    if ((uid_bytes_read = nfc_initiator_transceive_bytes(pnd, get_uid_command, sizeof(get_uid_command), uid_rx_bytes, sizeof(uid_rx_bytes), 0)) < 0) {
-        lerror("nfc_initiator_transceive_bytes => %s\n", nfc_strerror(pnd));
-        nfc_close(pnd);
-        nfc_exit(context);
-        exit(1);
-    }
-    log_command_received(uid_rx_bytes, uid_bytes_read);
+    // Read UID
+    uint8_t uid_rx_bytes[MAX_RESPONSE_LEN] = {};
+    uint8_t uid_bytes_read = nfc_srix_get_uid(reader, uid_rx_bytes);
 
     // Check for errors
     if (uid_bytes_read != 8) {
         lerror("Error while reading UID. Exiting...\n");
         lverbose("Received %d bytes instead of 8.\n", uid_bytes_read);
-        nfc_close(pnd);
-        nfc_exit(context);
+        close_nfc(context, reader);
         exit(1);
     }
 
+    // Convert to uint64
+    uint64_t uid = (uint64_t) uid_rx_bytes[7] << 56u | (uint64_t) uid_rx_bytes[6] << 48u |
+                   (uint64_t) uid_rx_bytes[5] << 40u | (uint64_t) uid_rx_bytes[4] << 32u |
+                   (uint64_t) uid_rx_bytes[3] << 24u | (uint64_t) uid_rx_bytes[2] << 16u |
+                   (uint64_t) uid_rx_bytes[1] << 8u | (uint64_t) uid_rx_bytes[0];
+
     // Print UID
     if (print_uid) {
-        printf("UID: ");
-        for (int i = uid_bytes_read - 1; i >= 0 ; i--) {
-            printf("%02X", uid_rx_bytes[i]);
-        }
-        printf("\n");
-
-        // Convert UID to unsigned int64
-        __uint64_t uid_uint64 = (__uint64_t) uid_rx_bytes[7] << 56u | (__uint64_t) uid_rx_bytes[6] << 48u |
-                                (__uint64_t) uid_rx_bytes[5] << 40u | (__uint64_t) uid_rx_bytes[4] << 32u |
-                                uid_rx_bytes[3] << 24u | uid_rx_bytes[2] << 16u |
-                                uid_rx_bytes[1] << 8u | uid_rx_bytes[0];
+        printf("UID: %016" PRIX64 "\n", uid);
 
         // Convert uint64 to binary char array
         char uid_binary[65] = {};
-        for (int i = 0; i < sizeof(uid_uint64); i++) {
-            __uint8_t tmp = (uid_uint64 >> (sizeof(uid_uint64) - 1 - i) * 8u) & 0xFFu;
+        for (unsigned int i = 0; i < sizeof(uid); i++) {
+            uint8_t tmp = (uid >> (sizeof(uid) - 1 - i) * 8u) & 0xFFu;
             sprintf(uid_binary + i * 8 + 0, "%c", tmp & 0x80u ? '1' : '0');
             sprintf(uid_binary + i * 8 + 1, "%c", tmp & 0x40u ? '1' : '0');
             sprintf(uid_binary + i * 8 + 2, "%c", tmp & 0x20u ? '1' : '0');
@@ -241,11 +198,10 @@ int main(int argc, char *argv[], char *envp[]) {
             sprintf(uid_binary + i * 8 + 6, "%c", tmp & 0x02u ? '1' : '0');
             sprintf(uid_binary + i * 8 + 7, "%c", tmp & 0x01u ? '1' : '0');
         }
-        uid_binary[64] = 0;
 
-        printf(" ⤷ Prefix: %02X\n", uid_rx_bytes[7]);
-        printf(" ⤷ IC manufacturer code: %02X", uid_rx_bytes[6]);
-        switch (uid_rx_bytes[6]) {
+        printf("├── Prefix: %02" PRIX64 "\n", uid >> 56u);
+        printf("├── IC manufacturer code: %02" PRIX64, (uid >> 48u) & 0xFFu);
+        switch ((uid >> 48u) & 0xFFu) {
             case 0x02:
                 printf(" (STMicroelectronics)\n");
                 break;
@@ -254,111 +210,74 @@ int main(int argc, char *argv[], char *envp[]) {
         }
 
         // Print 6bit IC code
-        char ic_code[10] = {};
-        strncpy(ic_code, uid_binary + 16, 6);
-        printf(" ⤷ IC code: %s\n", ic_code);
+        char ic_code[7] = {};
+        memcpy(ic_code, uid_binary + 16, 6);
+        printf("├── IC code: %s [%" PRIu64 "]\n", ic_code, (uid >> 42u) & 0x7u);
 
         // Print 42bit unique serial number
-        char unique_serial_number[50] = {};
-        strncpy(unique_serial_number, uid_binary + 22, 42);
-        printf(" ⤷ 42bit unique serial number: %s\n", unique_serial_number);
+        char unique_serial_number[43] = {};
+        memcpy(unique_serial_number, uid_binary + 22, 42);
+        printf("└── 42bit unique serial number: %s [%" PRIu64 "]\n", unique_serial_number, uid & 0x3FFFFFFFFFFu);
     }
 
     // Read EEPROM
-    lverbose("Reading %d blocks...\n", SRIX4K_EEPROM_BLOCKS);
-    __uint8_t eeprom_bytes[SRIX4K_EEPROM_SIZE] = {};
-
-    for (int i = 0; i < SRIX4K_EEPROM_BLOCKS; i++) {
-        // Set target block to command
-        read_block_command[1] = i;
-
-        __uint8_t *current_block = eeprom_bytes + (i * 4);
-        __uint8_t block_bytes_read = 0;
-
-        log_command_sent(read_block_command, sizeof(read_block_command));
-        if ((block_bytes_read = nfc_initiator_transceive_bytes(pnd, read_block_command, sizeof(read_block_command), current_block, sizeof(current_block), 0)) < 0) {
-            lerror("nfc_initiator_transceive_bytes => %s\n", nfc_strerror(pnd));
-            nfc_close(pnd);
-            nfc_exit(context);
-            exit(1);
-        }
-        log_command_received(current_block, block_bytes_read);
+    uint8_t *eeprom_bytes = malloc(sizeof(uint8_t) * eeprom_size);
+    lverbose("Reading %d blocks...\n", eeprom_blocks_amount);
+    for (int i = 0; i < eeprom_blocks_amount; i++) {
+        uint8_t *current_block = eeprom_bytes + (i * 4);
+        uint8_t block_bytes_read = nfc_srix_read_block(reader, current_block, i);
 
         // Check for errors
         if (block_bytes_read != 4) {
             lerror("Error while reading block %d. Exiting...\n", i);
             lverbose("Received %d bytes instead of 4.\n", block_bytes_read);
-            nfc_close(pnd);
-            nfc_exit(context);
+            close_nfc(context, reader);
             exit(1);
         }
 
-        printf("[%02X]> ", i);
-
+        printf("[%02X] ", i);
         if (fix_read_direction) {
-            for (int j = block_bytes_read - 1; j >= 0 ; j--) {
-                printf("%02X ", current_block[j]);
-            }
+            printf("%02X %02X %02X %02X ", current_block[3], current_block[2], current_block[1], current_block[0]);
         } else {
-            for (int j = 0; j < block_bytes_read; j++) {
-                printf("%02X ", current_block[j]);
-            }
+            printf("%02X %02X %02X %02X ", current_block[0], current_block[1], current_block[2], current_block[3]);
         }
-        printf("--- %s\n", get_block_type(i));
+        printf(DIM);
+        printf("--- %s\n", srix_get_block_type(i));
+        printf(RESET);
     }
 
     if (print_system_block) {
-        // Set target block to command
-        read_block_command[1] = 0xFF;
-
-        __uint8_t block_bytes_read = 0;
-        __uint8_t block_rx_bytes[MAX_FRAME_LEN] = {};
-
-        log_command_sent(read_block_command, sizeof(read_block_command));
-        if ((block_bytes_read = nfc_initiator_transceive_bytes(pnd, read_block_command, sizeof(read_block_command), block_rx_bytes, sizeof(block_rx_bytes), 0)) < 0) {
-            lerror("nfc_initiator_transceive_bytes => %s\n", nfc_strerror(pnd));
-            nfc_close(pnd);
-            nfc_exit(context);
-            exit(1);
-        }
-        log_command_received(block_rx_bytes, block_bytes_read);
+        uint8_t system_block_bytes[4] = {};
+        uint8_t system_block_bytes_read = nfc_srix_read_block(reader, system_block_bytes, 0xFF);
 
         // Check for errors
-        if (block_bytes_read != 4) {
-            lerror("Error while reading system block. Exiting...\n");
-            lverbose("Received %d bytes instead of 4.\n", block_bytes_read);
-            nfc_close(pnd);
-            nfc_exit(context);
+        if (system_block_bytes_read != 4) {
+            lerror("Error while reading block %d. Exiting...\n", 0xFF);
+            lverbose("Received %d bytes instead of 4.\n", system_block_bytes_read);
+            close_nfc(context, reader);
             exit(1);
         }
 
-        printf("System block: ");
-        if (fix_read_direction) {
-            for (int j = block_bytes_read - 1; j >= 0 ; j--) {
-                printf("%02X ", block_rx_bytes[j]);
+        uint32_t system_block = system_block_bytes[3] << 24u | system_block_bytes[2] << 16u | system_block_bytes[1] << 8u | system_block_bytes[0];
+
+        printf("System block: %02X %02X %02X %02X\n", system_block_bytes[3], system_block_bytes[2], system_block_bytes[1], system_block_bytes[0]);
+        printf("├── CHIP_ID: %02X\n", system_block_bytes[0]);
+        printf("├── ST reserved: %02X%02X\n", system_block_bytes[1], system_block_bytes[2]);
+        printf("└── OTP_Lock_Reg:\n");
+        for (uint8_t i = 24; i < 32; i++) {
+            if (i == 31) {
+                printf("    └── b%d = %d - ", i, (system_block >> i) & 1u);
+            } else {
+                printf("    ├── b%d = %d - ", i, (system_block >> i) & 1u);
             }
-        } else {
-            for (int i = 0; i < block_bytes_read; i++) {
-                printf("%02X ", block_rx_bytes[i]);
-            }
-        }
-        printf("\n");
 
-        __uint32_t a = block_rx_bytes[3] << 24u | block_rx_bytes[2] << 16u | block_rx_bytes[1] << 8u | block_rx_bytes[0];
-
-        printf(" ⤷ CHIP_ID: %02X\n", block_rx_bytes[0]);
-        printf(" ⤷ ST reserved: %02X%02X\n", block_rx_bytes[1], block_rx_bytes[2]);
-
-        printf(" ⤷ OTP_Lock_Reg:\n");
-        for (u_int8_t i = 24; i < 32; i++) {
-            printf("    ⤷ b%d = %d - ", i, (a >> i) & 1u);
             if (i == 24) {
                 printf("Block 07 and 08 are ");
             } else {
                 printf("Block %02X is ", i - 16);
             }
 
-            if (((a >> i) & 1u) == 0) {
+            if (((system_block >> i) & 1u) == 0) {
                 printf(RED);
                 printf("LOCKED\n");
                 printf(RESET);
@@ -370,18 +289,34 @@ int main(int argc, char *argv[], char *envp[]) {
         }
     }
 
+    // Check if file already exists
+    FILE *file = fopen(output_path, "r");
+    if (file) {
+        fclose(file);
+
+        // Ask for confirmation
+        printf("\"%s\" already exists.\n", output_path);
+        printf("Do you want to overwrite it? [Y/N] ");
+        char c = 'n';
+        scanf(" %c", &c);
+        if (c != 'Y' && c != 'y') {
+            printf("Exiting...\n");
+            close_nfc(context, reader);
+            exit(0);
+        }
+    }
+
     // Dump to file
     if (output_path != NULL) {
         FILE *fp = fopen(output_path, "w");
-        fwrite(eeprom_bytes, 1, 512, fp);
+        fwrite(eeprom_bytes, eeprom_size, 1, fp);
         fclose(fp);
 
         printf("Written dump to \"%s\".\n", output_path);
     }
 
     // Close NFC
-    nfc_close(pnd);
-    nfc_exit(context);
+    close_nfc(context, reader);
 
     return 0;
 }
