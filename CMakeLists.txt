@@ -17,10 +17,10 @@ target_link_libraries(srix-dump ${LIBNFC_LIBRARIES})
 add_executable(srix-read read_dump.c logging.c nfc_utils.c)
 target_link_libraries(srix-read ${LIBNFC_LIBRARIES})
 
-# srix-read
+# srix-restore
 add_executable(srix-restore restore_dump.c logging.c nfc_utils.c)
 target_link_libraries(srix-restore ${LIBNFC_LIBRARIES})
 
-# srix-read
+# srix-reset
 add_executable(srix-reset otp_reset.c logging.c nfc_utils.c)
 target_link_libraries(srix-reset ${LIBNFC_LIBRARIES})
