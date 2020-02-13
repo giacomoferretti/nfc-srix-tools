@@ -25,7 +25,7 @@
 #include "nfc_utils.h"
 
 static void print_usage(const char *executable) {
-    printf("Usage: %s <dump.bin> [-h] [-v]\n", executable);
+    printf("Usage: %s [-h] [-v]\n", executable);
     printf("\nOptions:\n");
     printf("  -h           show this help message\n");
     printf("  -v           enable verbose - print debugging data\n");
