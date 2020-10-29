@@ -30,8 +30,8 @@
 #define SR_WRITE_BLOCK_COMMAND 0x09
 
 /* Constants */
-const nfc_modulation nmISO14443B;
-const nfc_modulation nmISO14443B2SR;
+extern const nfc_modulation nmISO14443B;
+extern const nfc_modulation nmISO14443B2SR;
 
 /* Logging */
 void log_command_sent(const uint8_t *command, size_t num_bytes);
