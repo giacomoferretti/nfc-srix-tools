@@ -27,8 +27,8 @@
 #define BOLD "\033[1m"
 #define DIM "\033[2m"
 
-bool verbose_status;
-int verbosity_level;
+extern bool verbose_status;
+extern int verbosity_level;
 void set_verbose(bool);
 void set_verbosity(int);
 int lverbose(const char * restrict, ...);
