@@ -222,7 +222,26 @@ int main(int argc, char *argv[], char *envp[]) {
             }
         }
 
-        for (uint8_t i = 7; i < eeprom_blocks_amount; i++) {
+        // Ask for OTP area
+        bool write_otp_area = true;
+        if (!skip_confirmation) {
+            printf("This action is irreversible.\n");
+            printf("Are you sure? [Y/N] ");
+            char c = 'n';
+            scanf(" %c", &c);
+            if (c != 'Y' && c != 'y') {
+                write_otp_area = false;
+            }
+        }
+
+
+
+        for (uint8_t i = 0; i < eeprom_blocks_amount; i++) {
+            // Skip critical sectors
+            if (!write_otp_area) {
+                continue;
+            }
+
             uint32_t dump_block = dump_bytes[(i*4)+0] << 24u | dump_bytes[(i*4)+1] << 16u | dump_bytes[(i*4)+2] << 8u | dump_bytes[(i*4)+3];
             uint32_t eeprom_block = eeprom_bytes[(i*4)+0] << 24u | eeprom_bytes[(i*4)+1] << 16u | eeprom_bytes[(i*4)+2] << 8u | eeprom_bytes[(i*4)+3];
 
