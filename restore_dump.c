@@ -20,16 +20,18 @@
 #include <unistd.h>
 #include <nfc/nfc.h>
 #include <sys/stat.h>
+#include <stdbool.h>
 #include "logging.h"
 #include "nfc_utils.h"
 
 static void print_usage(const char *executable) {
-    printf("Usage: %s <dump.bin> [-h] [-v] [-t x4k|512]\n", executable);
+    printf("Usage: %s <dump.bin> [-h] [-v] [-y] [-t x4k|512]\n", executable);
     printf("\nNecessary arguments:\n");
     printf("  <dump.bin>   path to the dump file\n");
     printf("\nOptions:\n");
     printf("  -h           show this help message\n");
     printf("  -v           enable verbose - print debugging data\n");
+    printf("  -y           answer YES to all questions\n");
     printf("  -t x4k|512   select SRIX4K or SRI512 tag type [default: x4k]\n");
 }
 
@@ -37,13 +39,17 @@ int main(int argc, char *argv[], char *envp[]) {
     // Options
     uint16_t eeprom_size = SRIX4K_EEPROM_SIZE;
     uint8_t eeprom_blocks_amount = SRIX4K_EEPROM_BLOCKS;
+    bool skip_confirmation = false;
 
     // Parse options
     int opt = 0;
-    while ((opt = getopt(argc, argv, "hvt:")) != -1) {
+    while ((opt = getopt(argc, argv, "hvyt:")) != -1) {
         switch (opt) {
             case 'v':
                 set_verbose(true);
+                break;
+            case 'y':
+                skip_confirmation = true;
                 break;
             case 't':
                 if (strcmp(optarg, "512") == 0) {
@@ -205,13 +211,15 @@ int main(int argc, char *argv[], char *envp[]) {
 
     if (!is_equal) {
         // Ask for confirmation
-        printf("This action is irreversible.\n");
-        printf("Are you sure? [Y/N] ");
-        char c = 'n';
-        scanf(" %c", &c);
-        if (c != 'Y' && c != 'y') {
-            printf("Exiting...\n");
-            exit(0);
+        if (!skip_confirmation) {
+            printf("This action is irreversible.\n");
+            printf("Are you sure? [Y/N] ");
+            char c = 'n';
+            scanf(" %c", &c);
+            if (c != 'Y' && c != 'y') {
+                printf("Exiting...\n");
+                exit(0);
+            }
         }
 
         for (uint8_t i = 7; i < eeprom_blocks_amount; i++) {

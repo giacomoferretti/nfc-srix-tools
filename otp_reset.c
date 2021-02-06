@@ -25,19 +25,25 @@
 #include "nfc_utils.h"
 
 static void print_usage(const char *executable) {
-    printf("Usage: %s [-h] [-v]\n", executable);
+    printf("Usage: %s [-h] [-v] [-y]\n", executable);
     printf("\nOptions:\n");
     printf("  -h           show this help message\n");
     printf("  -v           enable verbose - print debugging data\n");
+    printf("  -y           answer YES to all questions\n");
 }
 
 int main(int argc, char *argv[], char *envp[]) {
+    bool skip_confirmation = false;
+
     // Parse options
     int opt = 0;
-    while ((opt = getopt(argc, argv, "hv")) != -1) {
+    while ((opt = getopt(argc, argv, "hvy")) != -1) {
         switch (opt) {
             case 'v':
                 set_verbose(true);
+                break;
+            case 'y':
+                skip_confirmation = true;
                 break;
             default:
             case 'h':
@@ -178,13 +184,15 @@ int main(int argc, char *argv[], char *envp[]) {
     printf("[%02X] %08X -> %08X\n", 0x06, otp_blocks[5], block_6);
 
     // Ask for confirmation
-    printf("This action is irreversible.\n");
-    printf("Are you sure? [Y/N] ");
-    char c = 'n';
-    scanf(" %c", &c);
-    if (c != 'Y' && c != 'y') {
-        printf("Exiting...\n");
-        exit(0);
+    if (!skip_confirmation) {
+        printf("This action is irreversible.\n");
+        printf("Are you sure? [Y/N] ");
+        char c = 'n';
+        scanf(" %c", &c);
+        if (c != 'Y' && c != 'y') {
+            printf("Exiting...\n");
+            exit(0);
+        }
     }
 
     // Write Block 06 first to trigger an Auto erase cycle

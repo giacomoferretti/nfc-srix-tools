@@ -25,7 +25,7 @@
 #include "nfc_utils.h"
 
 static void print_usage(const char *executable) {
-    printf("Usage: %s [dump.bin] [-h] [-v] [-u] [-s] [-a] [-r] [-t x4k|512]\n", executable);
+    printf("Usage: %s [dump.bin] [-h] [-v] [-u] [-s] [-a] [-r] [-y] [-t x4k|512]\n", executable);
     printf("\nOptional arguments:\n");
     printf("  [dump.bin]   dump EEPROM to file\n");
     printf("\nOptions:\n");
@@ -35,6 +35,7 @@ static void print_usage(const char *executable) {
     printf("  -u           print UID\n");
     printf("  -a           enable -s and -u flags together\n");
     printf("  -r           fix read direction\n");
+    printf("  -y           answer YES to all questions\n");
     printf("  -t x4k|512   select SRIX4K or SRI512 tag type [default: x4k]\n");
 }
 
@@ -42,13 +43,14 @@ int main(int argc, char *argv[], char *envp[]) {
     bool print_system_block = false;
     bool print_uid = false;
     bool fix_read_direction = false;
+    bool skip_confirmation = false;
     char *output_path = NULL;
     uint32_t eeprom_size = SRIX4K_EEPROM_SIZE;
     uint32_t eeprom_blocks_amount = SRIX4K_EEPROM_BLOCKS;
 
     // Parse options
     int opt = 0;
-    while ((opt = getopt(argc, argv, "hvusart:")) != -1) {
+    while ((opt = getopt(argc, argv, "hvusaryt:")) != -1) {
         switch (opt) {
             case 'v':
                 set_verbose(true);
@@ -65,6 +67,9 @@ int main(int argc, char *argv[], char *envp[]) {
                 break;
             case 'r':
                 fix_read_direction = true;
+                break;
+            case 'y':
+                skip_confirmation = true;
                 break;
             case 't':
                 if (strcmp(optarg, "512") == 0) {
@@ -295,14 +300,16 @@ int main(int argc, char *argv[], char *envp[]) {
         fclose(file);
 
         // Ask for confirmation
-        printf("\"%s\" already exists.\n", output_path);
-        printf("Do you want to overwrite it? [Y/N] ");
-        char c = 'n';
-        scanf(" %c", &c);
-        if (c != 'Y' && c != 'y') {
-            printf("Exiting...\n");
-            close_nfc(context, reader);
-            exit(0);
+        if (!skip_confirmation) {
+            printf("\"%s\" already exists.\n", output_path);
+            printf("Do you want to overwrite it? [Y/N] ");
+            char c = 'n';
+            scanf(" %c", &c);
+            if (c != 'Y' && c != 'y') {
+                printf("Exiting...\n");
+                close_nfc(context, reader);
+                exit(0);
+            }
         }
     }
 
