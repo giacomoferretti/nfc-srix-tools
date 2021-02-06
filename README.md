@@ -1,6 +1,12 @@
 # NFC SRIX Tools
 A repository containing tools to read/write NFC ST SRI512 and SRIX4K tags.
 
+## Known issues
+* On 32bit machines, it should give an error
+
+## TODOs
+* Complete rewrite (I made it a year and never wrote in C before)
+
 ## Prerequisites
 * [libnfc](https://github.com/nfc-tools/libnfc)
 
